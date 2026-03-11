@@ -29,4 +29,18 @@ public class S3Config {
 				.build();
 		return s3Client;
 	}
+
+	/**
+     * Build and return a configured S3AsyncClient using the application's aws properties.
+     * This keeps async calls consistent with the synchronous S3Client bean configuration.
+     */
+    @Bean
+    S3AsyncClient s3AsyncClient() {
+        return S3AsyncClient.builder()
+                .region(Region.of(region))
+                .credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create(awsAccessKeyId, awsSecretAccessKey)))
+                .build();
+    }
 }
+
