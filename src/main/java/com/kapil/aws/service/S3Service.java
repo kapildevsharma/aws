@@ -1,9 +1,13 @@
 package com.kapil.aws.service;
 
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
@@ -280,4 +284,54 @@ public class S3Service {
                 });
         return null;
     }
+
+    /**
+     * Performs a multipart upload to Amazon S3 using the provided S3 client.
+     *
+     * @param filePath the path to the file to be uploaded
+     */
+    public void multipartUploadWithS3Client(String filePath, String bucketName, String key) {
+
+        // Initiate the multipart upload.
+        CreateMultipartUploadResponse createMultipartUploadResponse = s3Client.createMultipartUpload(b -> b
+                .bucket(bucketName).key(key));
+        String uploadId = createMultipartUploadResponse.uploadId();
+
+        // Upload the parts of the file.
+        int partNumber = 1;
+        List<CompletedPart> completedParts = new ArrayList<>();
+        ByteBuffer bb = ByteBuffer.allocate(1024 * 1024 * 5); // 5 MB byte buffer
+
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "r")) {
+            long fileSize = file.length();
+            long position = 0;
+            while (position < fileSize) {
+                file.seek(position);
+                long read = file.getChannel().read(bb);
+
+                bb.flip(); // Swap position and limit before reading from the buffer.
+                UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
+                        .bucket(bucketName).key(key).uploadId(uploadId).partNumber(partNumber)
+                        .build();
+
+                UploadPartResponse partResponse = s3Client.uploadPart(uploadPartRequest, RequestBody.fromByteBuffer(bb));
+
+                CompletedPart part = CompletedPart.builder().partNumber(partNumber).eTag(partResponse.eTag())
+                        .build();
+                completedParts.add(part);
+
+                bb.clear();
+                position += read;
+                partNumber++;
+            }
+        } catch (IOException e) {
+            logger.error(e.getMessage());
+        }
+
+        // Complete the multipart upload.
+        s3Client.completeMultipartUpload(b -> b
+                .bucket(bucketName).key(key).uploadId(uploadId)
+                .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build()));
+    }
+
 }
